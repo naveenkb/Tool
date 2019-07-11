@@ -1,3 +1,7 @@
+"""
+Version v0.9.2
+
+"""
 import warnings
 warnings.filterwarnings("ignore")
 import pandas as pd
@@ -14,6 +18,8 @@ import dateutil.relativedelta
 import numpy as np
 import logging
 from collections import defaultdict
+from sklearn.externals import joblib
+import pickle
 
 class myModel:
     """
@@ -61,13 +67,12 @@ class myModel:
     def put_InitialFile(self):
         logging.debug("Inside put_Initial Module.")
         #cur_dir=os.curdir
-        os.chdir(self.basic_dict['path'])
         columns=['path','data_name','itv_data_name','otv_data_name','dev_cohort','otv_cohort','data_struct']
         formats = ['string','string','string','string','Please Fill the date Format','Please Fill the date Format','please fill the structure of data']
         provided=[self.basic_dict['path'],"","","","","",""]
         comments=['Path to your input data files','Name of developement data with .csv format e.g test_data.csv','Name of ITV data. do not fill if you dont have ITV data','Name of OTV data. do not fill if you dont have OTV data separate','developement cohort format same as performace period format in data. like - YYYYMM for 201802','OTV cohort format same as performace period format in data. like YYYYMM for 201803','Please fill structure of data. if data is in wide format then fill widef . if data is in long format please fill longf']
         basic_data=pd.DataFrame({'Requirements':columns,'user_provided_details':provided,'user_provided_format':formats,'comments':comments})
-        basic_data.to_csv('IOFiles/basic_data_requiremnts.csv',columns=['Requirements','user_provided_details','user_provided_format','comments'],index=False)
+        basic_data.to_csv(self.basic_dict['path']+'/basic_data_requiremnts.csv',columns=['Requirements','user_provided_details','user_provided_format','comments'],index=False)
         self.basic_dict['putInitial']=True
         logging.debug("basic_data_requirements.csv file is placed at path:{}".format(self.basic_dict['path']))
         
@@ -77,8 +82,7 @@ class myModel:
         
     def get_InitialFile(self):
         logging.debug("Inside get_Initial Module.")
-        os.chdir(self.basic_dict['path'])
-        basic_data=pd.read_csv('IOFiles/basic_data_requiremnts.csv')
+        basic_data=pd.read_csv(self.basic_dict['path']+'/basic_data_requiremnts.csv')
         basic_data = basic_data.where((pd.notnull(basic_data)), None)
         variable_name=basic_data.loc[:,'Requirements']
         variable_val=basic_data.loc[:,'user_provided_details']
@@ -88,21 +92,22 @@ class myModel:
             if(variable_formats[i]!="string"):
                 self.basic_dict[variable_name[i]+"_format"]=variable_formats[i]
         
-        if self.basic_dict['data_struct']=="widef" and self.basic_dict['itv_data_name']==None or self.basic_dict['otv_data_name']==None:
+        if (self.basic_dict['data_struct']=="widef" and (self.basic_dict['itv_data_name']==None or self.basic_dict['otv_data_name']==None)):
             logging.debug("can not go ahead without OTV and ITV data sets.")
-            print("can not go ahead without OTV and ITV data sets.")
+            raise Exception("can not go ahead without OTV and ITV data sets.")
                 
-        if(self.basic_dict['dev_cohort']==None or self.basic_dict['otv_cohort']==None or self.basic_dict['data_name']==None):
+        if (self.basic_dict['data_struct']=="longf" and (self.basic_dict['dev_cohort']==None or self.basic_dict['otv_cohort']==None or self.basic_dict['data_name']==None)):
             raise Exception("Following fields of basic_requirement.csv --> dev_cohort , otv_cohort , data_name CAN NOT BE BLANK")
             
         cohorts_df=pd.DataFrame(data=[self.basic_dict['dev_cohort'] ,self.basic_dict['otv_cohort']],columns=['cohort'],index=['dev','otv'])
-        ch_fmt_dev=self.basic_dict['dev_cohort_format']
-        ch_fmt_otv=self.basic_dict['otv_cohort_format']
-        if ch_fmt_dev==ch_fmt_otv:
-            cohorts_df['cohort']= pd.to_datetime(cohorts_df['cohort'],errors='raise',format=ch_fmt_dev)
-        else:
-            raise Exception('Format of dev and otv cohorts needs to be same')
-            
+        if self.basic_dict['data_struct']=="longf":
+            ch_fmt_dev=self.basic_dict['dev_cohort_format']
+            ch_fmt_otv=self.basic_dict['otv_cohort_format']
+            if ch_fmt_dev==ch_fmt_otv:
+                cohorts_df['cohort']= pd.to_datetime(cohorts_df['cohort'],errors='raise',format=ch_fmt_dev)
+            else:
+                raise Exception('Format of dev and otv cohorts needs to be same')
+                
         self.basic_dict["cohort_df"]=cohorts_df
         logging.debug("A File read with name basic_data_requirements.csv from path : {}. Dictionary has the values:{}".format(self.basic_dict['path'] , self.basic_dict))
         self.check_Path()
@@ -146,7 +151,6 @@ class myModel:
         logging.debug("Inside change_path Module.")
         if(new_path!=None):
             self.check_Path(new_path)    
-        os.chdir(self.basic_dict['path'])
         logging.debug("path: {} changed to given path in Dictionary :{}".format(new_path , self.basic_dict['path']))
         self.check_File()
             
@@ -169,10 +173,9 @@ class myModel:
             self.basic_dict['data_name']=str(self.basic_dict['data_name'].split(".csv")[0])+str(".csv")
             #print(str(str(self.basic_dict['path'])+str('/data/')+str(self.basic_dict['data_name'])))
         
-            if(os.path.exists(str(str(self.basic_dict['path'])+str('/data/')+str(self.basic_dict['data_name'])))):
-                os.chdir(self.basic_dict['path'])
+            if(os.path.exists(str(str(self.basic_dict['path'])+str('/')+str(self.basic_dict['data_name'])))):
                 if(self.basic_dict['data_name']!=None):
-                    self.dev_data=pd.read_csv("data/"+self.basic_dict['data_name'])
+                    self.dev_data=pd.read_csv(self.basic_dict['path']+"/"+self.basic_dict['data_name'])
                     logging.debug("File Exist {} at path {} and Successfully read and stores in the pandas dataframe name dev_data. Dictionary is : {}".format(self.basic_dict['dev_data_name'], self.basic_dict['path'] ,  self.basic_dict))
                 else:
                     raise Exception("data name is not provided correctly")
@@ -192,11 +195,10 @@ class myModel:
     def read_Data(self,filename=None,path=None):
         logging.debug("Inside read_data Module. filename : {}  and path : {} . Dictionary is : {}".format(filename , path , self.basic_dict))
         if(path==None):
-            os.chdir(self.basic_dict['path'])
             path=self.basic_dict['path']
         if(filename!=None):
             filename=str(filename.split(".csv")[0])+str(".csv")
-            return self.StandardizeDatatype(pd.read_csv(path+"/data/"+filename))
+            return self.StandardizeDatatype(pd.read_csv(path+"/"+filename))
         else:
             raise Exception("File name does not exist or file name is not correct")
         
@@ -244,11 +246,11 @@ class myModel:
                 var.append(key)
                 mini.append(0)
                 maxim.append(0)
-                dtype.append(["num" if self.dev_data[key].dtypes in ["float64"] else "cat" if self.dev_data[key].dtypes in ["int64"] and len(list(self.dev_data[key].unique())) <= self.max_category else "cat" if self.dev_data[key].dtypes in ["O"] and len(list(self.dev_data[key].unique())) <self.max_category else "num"][0])
+                dtype.append(["num" if self.dev_data[key].dtypes in ["float64"] else 'cat' if self.dev_data[key].dtypes in ["O"]  else "cat" if self.dev_data[key].dtypes in ["int64"] and len(list(self.dev_data[key].unique())) <= self.max_category else "cat" if self.dev_data[key].dtypes in ["O"] and len(list(self.dev_data[key].unique())) <self.max_category else "num"][0])
                         
         output=pd.DataFrame({"col":var , "start_index":mini , "end_index":maxim , "suggested_dtype":dtype,"user_edited_dtype":dtype},columns=["col","start_index","end_index","suggested_dtype","user_edited_dtype"])
         self.data_dict=None
-        output.to_csv('IOFiles/data_dictionary.csv',index=False)
+        output.to_csv(self.basic_dict['path']+'/'+'data_dictionary.csv',index=False)
         self.basic_dict['putDataDictionary']=True
         logging.debug("Put Data Dictionary module executed Successfully. Dictionary is : {}".format(self.basic_dict))
      
@@ -256,7 +258,7 @@ class myModel:
 
     def get_DataDictionaryWide(self,test_size=0.2):
         logging.debug("Inside get_DataDictionaryWide Module with test_size : {}".format(test_size))
-        self.data_dict=pd.read_csv('IOFiles/'+self.basic_dict['data_dict_name'])
+        self.data_dict=pd.read_csv(self.basic_dict['path']+'/'+self.basic_dict['data_dict_name'])
         col=self.data_dict['col']
         start=self.data_dict['start_index']
         end=self.data_dict['end_index']
@@ -265,7 +267,7 @@ class myModel:
         self.basic_dict['id']=[]
         self.basic_dict['seq']=[]
         self.basic_dict['cat']=[]
-        self.basic_dict['date']=[]
+        self.basic_dict['drop']=[]
         self.basic_dict['target']=[]
         self.basic_dict['num']=[]
         
@@ -296,17 +298,25 @@ class myModel:
             
             elif(dtype[i][0]=="t"):
                 self.basic_dict['target'].append(col[i])
-                    
+            elif(dtype[i][0]=="d"):
+                j=start[i]
+                k=end[i]
+                if ((k-j)!=0):
+                    for j in range(start[i],end[i]):
+                        self.basic_dict['drop'].append(col[i]+"-"+str(j))
+                else:
+                    self.basic_dict['drop'].append(col[i])
+                    #self.basic_dict['drop'].append(col[i])
         self.basic_dict['num'].extend(self.basic_dict['seq'])            
         self.basic_dict['seqvaronly']=np.where(self.data_dict['user_edited_dtype']=='seq',self.data_dict.col,99999)
         self.basic_dict['seqvarstart']=np.where(self.data_dict['user_edited_dtype']=='seq',self.data_dict['start_index'],99999)
         self.basic_dict['seqvarend']=np.where(self.data_dict['user_edited_dtype']=='seq',self.data_dict['end_index'],99999)
-        logging.debug("Data Dictionary readed and created successfully.")
+        logging.debug("Data Dictionary read and created successfully.")
         logging.debug("ID Variables from Data : {}".format(self.basic_dict['id']))
         logging.debug("performace Variables from Data : {}".format(self.basic_dict['performance']))
         logging.debug("Sequence Variables from Data : {}".format(self.basic_dict['seq']))
         logging.debug("Categorical Variables from Data : {}".format(self.basic_dict['cat']))
-        logging.debug("date Variable from Data : {}".format(self.basic_dict['date']))
+        #logging.debug("date Variable from Data : {}".format(self.basic_dict['date']))
         otv_data=None
         
         self.dev_data=self.StandardizeDatatype(self.dev_data)
@@ -327,7 +337,7 @@ class myModel:
             logging.debug("reading given ITV data in Basic Requirements file : {}".format(self.basic_dict['itv_data_name']))
             logging.debug("Returning dev , itv and Data dictionary from get_DataDictionary Module")
             #print("in else")
-            return self.dev_data,self.read_Data(self.basic_dict['itv_data_name']),otv_data,self.basic_dict
+            return self.dev_data,self.StandardizeDatatype(self.read_Data(self.basic_dict['itv_data_name'])),otv_data,self.basic_dict
         
             
     def put_DataDictionary(self,max_category=None):
@@ -337,9 +347,13 @@ class myModel:
         var=self.dev_data.columns
         var_type=self.dev_data.dtypes
         var_type_format="Fill the format only if its a date or time variable."
-        suggested_type=["num" if var_type[x] in ["float64"] else "cat" if var_type[x] in ["int64"] and len(list(self.dev_data[var[x]].unique()))<=self.max_category else "cat" if var_type[x] in ["O"] and len(list(self.dev_data[var[x]].unique()))<=self.max_category else "date" if isinstance(self.dev_data[var[x]],datetime.date) else "num" for x in range(len(var)) ] 
+        suggested_type=["num" if var_type[x] in ["float64"] 
+                                 else "cat" if ((var_type[x] in ["int64"]) and len(list(self.dev_data[var[x]].unique()))<=self.max_category)
+                                    else "cat" if ((var_type[x] in ["O"]))
+                                        else "date" if isinstance(self.dev_data[var[x]],datetime.date) 
+                                            else "num" for x in range(len(var)) ] 
         self.data_dict=None
-        pd.DataFrame({"Variable":self.dev_data.columns,"suggested_type":suggested_type,"user_edited_type":suggested_type,"user_edited_format":var_type_format}).to_csv('IOFiles/data_dictionary.csv',columns=["Variable","suggested_type","user_edited_type","user_edited_format"],index=False)
+        pd.DataFrame({"Variable":self.dev_data.columns,"suggested_type":suggested_type,"user_edited_type":suggested_type,"user_edited_format":var_type_format}).to_csv(self.basic_dict['path']+'/'+'data_dictionary.csv',columns=["Variable","suggested_type","user_edited_type","user_edited_format"],index=False)
         self.basic_dict['putDataDictionary']=True
         logging.debug("Put Data Dictionary module executed Successfully. Dictionary is : {}".format(self.basic_dict))
       
@@ -363,9 +377,7 @@ class myModel:
                 if(var_type[i][0]==type_var[0]):
                     final.append(var_name[i])
                 if(type_var=="per" and var_type[i][0]=="p"):
-                    self.basic_dict['performace_format'].append(user_edited_format[i])
-                if(type_var=="date" and var_type[i][0]=="d" and user_edited_format[i][0]=='d'):
-                    self.basic_dict['date_format'].append(user_edited_format[i])
+                    self.basic_dict['performace_format'].append(user_edited_format[i])  
             logging.debug("List of {} Variable is :{} ".format(type_var,final))
             return final
         except:
@@ -380,7 +392,7 @@ class myModel:
    '''
    
    
-    def ext_other_var(self,df=None,time_var=[None],id_vars=[None],seq_vars=[None],cat_vars=[None],date_vars=[None],target=[None]):
+    def ext_other_var(self,df=None,time_var=[None],id_vars=[None],seq_vars=[None],cat_vars=[None],drop_vars=[None],target=[None]):
         logging.debug("Inside ext_other_var Module.")
         lcols=df.Variable
         b_list=[x for x in time_var]
@@ -388,9 +400,9 @@ class myModel:
         b_list.extend(target)
         b_list.extend(seq_vars)
         b_list.extend(cat_vars)
-        b_list.extend(date_vars)
+        b_list.extend(drop_vars)
         l=[x for x in lcols if x not in b_list]
-        logging.debug("List of those Which variable which do not come under ID , categorical , sequence , date and time. but come under numerical. List is : {}".format(l))
+        logging.debug("List of those Which variable which do not come under ID , categorical , sequence , drop and target. but come under numerical. List is : {}".format(l))
         return list(l)
        
        
@@ -401,26 +413,27 @@ class myModel:
         
     def get_DataDictionary(self,test_size=0.2):
         logging.debug("Inside get_DataDictionary Module with test_size : {}".format(test_size))
-        self.data_dict=pd.read_csv('IOFiles/'+self.basic_dict['data_dict_name'])
-        self.data_dict['user_edited_type'] = self.data_dict.apply(lambda row: 'num' if row['user_edited_type'][0]=='n' else ('seq'  if row['user_edited_type'][0]=='s' else ('per'  if row['user_edited_type'][0]=='p' else ('date'  if row['user_edited_type'][0]=='d' else ('cat'  if row['user_edited_type'][0]=='c' else ('target'  if row['user_edited_type'][0]=='t' else ('id' if row['user_edited_type'][0]=='i' else "")))))),axis=1) 
+        self.data_dict=pd.read_csv(self.basic_dict['path']+'/'+self.basic_dict['data_dict_name'])
+        self.data_dict['user_edited_type'] = self.data_dict.apply(lambda row: 'num' if row['user_edited_type'][0]=='n' else ('seq'  if row['user_edited_type'][0]=='s' else ('per'  if row['user_edited_type'][0]=='p' else ('drop'  if row['user_edited_type'][0]=='d' else ('cat'  if row['user_edited_type'][0]=='c' else ('target'  if row['user_edited_type'][0]=='t' else ('id' if row['user_edited_type'][0]=='i' else "")))))),axis=1) 
         self.data_dict['user_edited_type']=self.data_dict['user_edited_type'].str.lower()
         self.basic_dict['performance']  = self.ext_vars(self.data_dict,type_var="per")
         self.basic_dict['id']    = self.ext_vars(self.data_dict,type_var="id")
         self.basic_dict['seq']   = self.ext_vars(self.data_dict,type_var="seq")
         self.basic_dict['cat']   = self.ext_vars(self.data_dict,type_var="cat")
-        self.basic_dict['date']  = self.ext_vars(self.data_dict,type_var="date")
+        #self.basic_dict['date']  = self.ext_vars(self.data_dict,type_var="date")
         self.basic_dict['target']= self.ext_vars(self.data_dict,type_var="target")
-        self.basic_dict['other'] = self.ext_other_var(self.data_dict,self.basic_dict['performance'] , self.basic_dict['id'] , self.basic_dict['seq'], self.basic_dict['cat'] , self.basic_dict['date'] , self.basic_dict['target'])
+        self.basic_dict['drop']= self.ext_vars(self.data_dict,type_var="drop")
+        self.basic_dict['other'] = self.ext_other_var(self.data_dict,self.basic_dict['performance'] , self.basic_dict['id'] , self.basic_dict['seq'], self.basic_dict['cat'] , self.basic_dict['drop'] , self.basic_dict['target'])
         num_var=[x for x in self.basic_dict['seq']]
         num_var.extend(self.basic_dict['other'])
         self.basic_dict['num']=num_var
-        self.data_dict.to_csv('data_dictionary.csv',index=False)
+        #self.data_dict.to_csv(self.basic_dict['path']+'/'+'data_dictionary.csv',index=False)
         logging.debug("Data Dictionary readed and created successfully.")
         logging.debug("ID Variables from Data : {}".format(self.basic_dict['id']))
         logging.debug("performace Variables from Data : {}".format(self.basic_dict['performance']))
         logging.debug("Sequence Variables from Data : {}".format(self.basic_dict['seq']))
         logging.debug("Categorical Variables from Data : {}".format(self.basic_dict['cat']))
-        logging.debug("date Variable from Data : {}".format(self.basic_dict['date']))
+        #logging.debug("date Variable from Data : {}".format(self.basic_dict['date']))
         otv_data=None
         
         self.dev_data=self.StandardizeDatatype(self.dev_data)
@@ -440,8 +453,8 @@ class myModel:
         else:
             logging.debug("reading given ITV data in Basic Requirements file : {}".format(self.basic_dict['itv_data_name']))
             logging.debug("Returning dev , itv and Data dictionary from get_DataDictionary Module")
-            #print("in else")
-            return self.dev_data,self.read_Data(self.basic_dict['itv_data_name']),otv_data,self.basic_dict
+            #itv=self.dev_data=self.StandardizeDatatype(self.dev_data)
+            return self.dev_data,self.StandardizeDatatype(self.read_Data(self.basic_dict['itv_data_name'])),otv_data,self.basic_dict
             
         
     
@@ -470,35 +483,45 @@ class myModel:
         target_list=self.basic_dict['target']
         cat_list=self.basic_dict['cat']
         per_list=self.basic_dict['performance']
-        time_list=self.basic_dict['date']
+        drop_list=self.basic_dict['drop']
         if data.empty:
             raise Exception('CSV Dataset of the specified name is Not present in the location!')
         else:
-            data[id_list] = data[id_list].astype(object,errors='raise')
-            for var in num_seq_list:
+            try:
+                data[id_list] = data[id_list].astype(object,errors='ignore')
+            except:
+                print("check id list variable type given correctly or not\n")
+            try:
+                data[num_seq_list] = data[num_seq_list].astype(float, error='ignore')
+            except:
+                print("check numeric and sequence variable data type given correctly in file or not\n")
+            """for var in num_seq_list:
                 if var in data.columns.tolist():
+                    #print(var)
                     if var not in data.select_dtypes(include=[np.number]).columns.tolist():
-                        data[var] = data[var].astype(float,errors='raise')
+                        data[var] = data[var].astype(float,errors='ignore')"""
+            
+            #print("after first for")
             for var in target_list:
                 if var in data.columns.tolist():
                     if var not in data.select_dtypes(include=[np.number]).columns.tolist():
-                        data[var] = data[var].astype(float,errors='raise')
-            data[cat_list] = data[cat_list].astype(object,errors='raise')
-            data[per_list] = data[per_list].astype(str,errors='raise')
-            data[time_list] = data[time_list].astype(str,errors='raise')
+                       data[var] = data[var].astype(float,errors='ignore')
+            data[cat_list] = data[cat_list].astype(object,errors='ignore')
+            data[per_list] = data[per_list].astype(str,errors='ignore')
+            #data[time_list] = data[time_list].astype(str,errors='raise')
+            
+            for var in drop_list:
+                if var in data.columns.tolist():
+                    data=data.drop([var],axis=1)  
             counter=0
+            
             for var in per_list:
                 fmt=self.basic_dict['performace_format'][counter]
-                data[var]= pd.to_datetime(data[var],errors='raise',format=fmt)
-                counter=counter+1
-            counter=0
-            for var in time_list:
-                fmt=self.basic_dict['date_format'][counter]
-                data[var]= pd.to_datetime(data[var],errors='raise',format=fmt)
+                data[var]= pd.to_datetime(data[var],errors='ignore',format=fmt)
                 counter=counter+1
         return data
             
-    
+    ##########################################?????????????????????????????????
     def splitDevOtvData(self,df=None):
         logging.debug("inside splitDevOtvData Module")
         if(df is not None):
@@ -527,24 +550,27 @@ class myModel:
             
     def runInitializer(self,test_size=0.2):
         logging.debug("inside runInitializer Module")
+        
         if self.basic_dict['putInitial']==False:
             self.put_InitialFile()
-            print("\nbasic_requirements.csv file is created at path :  " ,self.basic_dict['path']+"/IOFiles" , '\tPlease provide required details.' )
-        action=input("\nConfirm if necessary details are provided in basic_requirements.csv file and saved in the same location (Y/N) -------->    ").lower()
+            print("\n basic_requirements.csv file is created at path :  " ,self.basic_dict['path'] , '\tPlease provide required details.' )
+		 
+        action=input("\n Confirm if necessary details are provided in basic_requirements.csv file and saved in the same location (Y/N) -------->    ").lower()
         while(action=='n'):
-            action=input("\nConfirm if necessary details are provided in basic_requirements.csv file and saved in the same location (Y/N) -------->     ").lower()
+            action=input("\n Confirm if necessary details are provided in basic_requirements.csv file and saved in the same location (Y/N) -------->     ").lower()
         logging.debug("calling get_Initial Module")
         self.get_InitialFile()
         
         if self.basic_dict['putDataDictionary']==False:
             if self.basic_dict['data_struct']=="longf":
-                self.put_DataDictionary()
+               self.put_DataDictionary()
             elif self.basic_dict['data_struct']=="widef":
-                self.put_DataDictionaryWide()
-            print("\ndata_dictionary.csv file has been created at path :  ", self.basic_dict['path']+"IOFiles" , " Please Provide the required details." )
-        action=input("\nConfirm if necessary details are provided in data_dictionary.csv file and saved in the same location (Y/N) -------->   ").lower()
+               self.put_DataDictionaryWide()
+            print("\n data_dictionary.csv file has been created at path :  ", self.basic_dict['path'] , " Please Provide the required details." )
+		 
+        action=input("\n Confirm if necessary details are provided in data_dictionary.csv file and saved in the same location (Y/N) -------->   ").lower()
         while(action=='n'):
-             action=input("Confirm if necessary details are provided in data_dictionary.csv file and saved in the same location (Y/N) -------->   ").lower()
+             action=input("\n Confirm if necessary details are provided in data_dictionary.csv file and saved in the same location (Y/N) -------->   ").lower()
 
         if self.basic_dict['data_struct']=="longf":
             logging.debug("calling get_DataDictionary Module")
@@ -552,7 +578,7 @@ class myModel:
         elif self.basic_dict['data_struct']=="widef":
             logging.debug("inside get_DataDictionaryWide Module")
             return self.get_DataDictionaryWide(test_size)
-    
+        
     
     def missingFit(self, df,version="v1",basic_dict=None):
         logging.debug("inside missingFit Module")
@@ -570,15 +596,17 @@ class myModel:
         self.createDummy=CreateDummies()
         self.createDummy.fit(df,basic_dict, max_cat_levels, na_dummies, version)
         
+        
     def dummyTranform(self,df):
         logging.debug("inside dummyTransform Module")
         return self.createDummy.transform(df)
         
-    def outlierFit(self,df, basic_dict, outlier_cap = 0.99, version=None):
+    def outlierFit(self,df, basic_dict, lower_cap, upper_cap, version=None):
         logging.debug("inside outlierFit Module")
         from Class_Outlier_Treatment import OutlierTreatment
         self.outlier=OutlierTreatment()
-        self.outlier.fit(df, basic_dict, outlier_cap, version)
+        self.outlier.fit(df, basic_dict, lower_cap, upper_cap, version)
+        
         
     def outlierTransform(self,df):
         logging.debug("inside outlierTransform Module")
@@ -651,10 +679,11 @@ class myModel:
             avail_df.append(centf)
         
         if('s' in feature_type):
-            logging.debug("calling Sequence Feature creation Module")
-            seqf,dictionary=self.feature[version].createSequenceFeature(df,cohort_period_type,n_month,split_type)
-            avail_df.append(seqf)
-        
+            if self.basic_dict['seq'] != []:
+                logging.debug("calling Sequence Feature creation Module")
+                seqf,dictionary=self.feature[version].createSequenceFeature(df,cohort_period_type,n_month,split_type)
+                avail_df.append(seqf)
+            
         if('v' in feature_type):
             logging.debug("calling velocity feature creation Module")
             vecf,dictionary=self.feature[version].velocity_fts(df,cohort_period_type,n_month,split_type)
@@ -666,9 +695,6 @@ class myModel:
         
         elif(split_type=="otv"):
             merged_df=self.feature[version].mergeRawAndCreatedFeatures(df.loc[df[self.basic_dict['performance'][0]]==self.basic_dict['cohort_df']['cohort']['otv']],avail_df)
-         
-         
-        
         return merged_df
         
         
@@ -680,6 +706,7 @@ class myModel:
         if(version==None):
             print("No argument passed. version should be passed as an argument")
             return None
+        return self.feature_sel[version].featuresIterationsSummary()
         #try:
             #print("Hi i am inside featureIterationSummary")
             #print(self.feature[version]);
@@ -726,8 +753,8 @@ class myModel:
     def pdpVarReduction(self,df,dset_list,dset_list_name,featureslist, final_params,version=None):
         return self.mdlSelection[version].pdpVarReduction(df,dset_list,dset_list_name,featureslist,final_params)
     
-    def finalReport(self,final_params,final_nonflat_features,otv,version=None):
-        self.mdlSelection[version].finalReport(final_params,final_nonflat_features,otv)
+    def finalReport(self,final_params,final_nonflat_features,otv,itv,version=None):
+        self.mdlSelection[version].finalReport(final_params,final_nonflat_features,otv,itv)
         
         
             
