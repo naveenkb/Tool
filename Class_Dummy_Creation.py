@@ -1,3 +1,7 @@
+"""
+Version v0.9.2
+
+"""
 import numpy as np
 import pandas as pd
 import logging
@@ -21,7 +25,8 @@ class CreateDummies():
     def __init__(self):
         logging.debug("inside constructor of Dummy Creation class Module")
         self.version = None
-        self.na_dummies = None 
+        self.na_dummies = None
+        self.basic_dict={}
         
     def fit(self, df, basic_dict, max_cat_levels = 50, na_dummies = True, version=None):
         logging.debug("inside fit  Module of Dummy Creation class")
@@ -35,7 +40,7 @@ class CreateDummies():
         na_dummies : Boolean value determining whether to create a new level for NAs
         """
         self.version=version
-        
+        self.basic_dict=basic_dict
         #dtypes_num=pd.DataFrame({"col":basic_dict['num'],"dtype":"num"})
         dtypes_cat=basic_dict['cat']
         dummy_treatment_df = pd.DataFrame(columns=['var_name', 'no_of_levels', 'unique_levels'])
@@ -52,7 +57,7 @@ class CreateDummies():
         dummy_treatment_df['na_dummies'] = na_dummies
 
         # save the file
-        dummy_treatment_df.to_csv('IOFiles/dummy_treatment_df.csv', index=False)
+        dummy_treatment_df.to_csv(basic_dict['path']+'/'+'dummy_treatment_df.csv', index=False)
 
         self.na_dummies =  na_dummies
         logging.debug("dummies created are : {}".format(dummy_treatment_df['dummies_created']))
@@ -68,7 +73,7 @@ class CreateDummies():
         df : Input Dataframe to create dummies 
     
         """
-        dummy_treatment_df = pd.read_csv('IOFiles/dummy_treatment_df.csv')
+        dummy_treatment_df = pd.read_csv(self.basic_dict['path']+'/'+'dummy_treatment_df.csv')
         for var in dummy_treatment_df.var_name:
             # create the dummies and append to dataset 
             if (dummy_treatment_df[dummy_treatment_df['var_name'] == var]['dummies_created'].values == 'Yes'):
