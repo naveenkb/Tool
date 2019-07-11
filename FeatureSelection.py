@@ -1,3 +1,7 @@
+"""
+Version v0.9.2
+
+"""
 from sklearn.cross_validation import train_test_split
 from sklearn.preprocessing import LabelEncoder
 from sklearn.metrics.pairwise import euclidean_distances
@@ -18,20 +22,20 @@ class FeatureSelection:
         self.df=None
         self.dictionary=desc_dict
         self.version=str(version)
-        if not os.path.exists('results'):
-            os.makedirs('results')
+        if not os.path.exists(self.dictionary['path']+'/'+'results'):
+            os.makedirs(self.dictionary['path']+'/'+'results')
  
-        if not os.path.exists('saved_objects'):
-            os.makedirs('saved_objects')
+        if not os.path.exists(self.dictionary['path']+'/'+'saved_objects'):
+            os.makedirs(self.dictionary['path']+'/'+'saved_objects')
  
-        if not os.path.exists('PDP'):
-            os.makedirs('PDP')
+        if not os.path.exists(self.dictionary['path']+'/'+'PDP'):
+            os.makedirs(self.dictionary['path']+'/'+'PDP')
         
     def featuresIterationsSummary(self):
         logging.debug("inside featureIterationsSummary Module of Feature Engineering Class.")
         iter_type = 'features'
         identifier = 'xgb_'+self.version
-        summary_df = pd.read_csv('results/summary_df_' + iter_type + '_' + identifier + '.csv')
+        summary_df = pd.read_csv(self.dictionary['path']+'/'+'results/summary_df_' + iter_type + '_' + identifier + '.csv')
         '''
         if top > summary_df.shape[0]:
             print('Top {} iterations with features are :'.format(top))
@@ -65,7 +69,7 @@ class FeatureSelection:
         summary_df['stability_weighted_otv_ks'] = summary_df['stability_score'] * summary_df['otv_ks']
         
         summary_df.sort_values('stability_weighted_otv_ks', ascending=False, inplace=True)
-        summary_df.to_csv('results/summary_df_' + iter_type + '_' + identifier + '_ordered.csv', index=False)
+        summary_df.to_csv(self.dictionary['path']+'/'+'results/summary_df_' + iter_type + '_' + identifier + '_ordered.csv', index=False)
         logging.debug("featuresItearationsSummary Module executed Successfully. dictionary is : {}".format(self.dictionary))
         return summary_df
 
@@ -74,9 +78,9 @@ class FeatureSelection:
     def featuresSelection(self,rank):
         logging.debug("inside feature Selection Module of Feature Engineering Class. User choosen rank value is : {}".format(rank))
         version=self.version
-        summary_df=pd.read_csv('results/summary_df_features_xgb_' + version + '_ordered.csv')
+        summary_df=pd.read_csv(self.dictionary['path']+'/'+'results/summary_df_features_xgb_' + version + '_ordered.csv')
         count=int(summary_df[summary_df.Rank2== rank].iloc[0]['feature_count'])
-        importance_df=pd.read_csv('results/feature_importance_'+str(count)+'_features_'+version+'.csv')
+        importance_df=pd.read_csv(self.dictionary['path']+'/'+'results/feature_importance_'+str(count)+'_features_'+version+'.csv')
         features=list(importance_df.iloc[:,0])
         logging.debug("List of Selected Features : {}. \n Dictionary is : {}".format(features,self.dictionary))
         return features
