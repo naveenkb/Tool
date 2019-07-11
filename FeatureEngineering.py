@@ -1,3 +1,7 @@
+"""
+Version v0.9.2
+
+"""
 from sklearn.cross_validation import train_test_split
 from sklearn.preprocessing import LabelEncoder
 from sklearn.metrics.pairwise import euclidean_distances
@@ -352,18 +356,18 @@ class FeatureEngineering:
         model.fit(df.drop(drop_vars, axis=1), df[y[0]])
         imp_features_df = pd.DataFrame({'feature_names': df.drop(drop_vars, axis=1).columns, 'importance': model.feature_importances_})
         imp_features_df.sort_values('importance', ascending=False, inplace=True)
-        imp_features_df.to_csv('feature_importance_' + version + '.csv', index=False)
+        imp_features_df.to_csv(self.dictionary['path']+'/'+'results/feature_importance_' + version + '.csv', index=False)
         
         if save_pred:
             pred = model.predict_proba(df.drop(drop_vars, axis=1))
             out['pred'] = pred
-            out.to_csv('results/pred_dev_overall_'+ version + '.csv', index=False)
+            out.to_csv(self.dictionary['path']+'/'+'results/pred_dev_overall_'+ version + '.csv', index=False)
             
         logging.debug("Iterating on different feature combination in dev...")
         
         print('Iterating on different feature combination in dev..')
         summary_df =  pd.DataFrame()
-        imp_features_df = pd.read_csv('feature_importance_' + version + '.csv')
+        imp_features_df = pd.read_csv(self.dictionary['path']+'/'+'results/feature_importance_' + version + '.csv')
         imp_features_df = imp_features_df.sort_values('importance', ascending = False)
         imp_features = imp_features_df[imp_features_df['importance'] != 0]
         feature_count = len(imp_features)
@@ -379,13 +383,13 @@ class FeatureEngineering:
             curr_X = df.loc[:,curr_features]
             model = XGBClassifier(seed = 10)
             model.fit(curr_X, target)
-            joblib.dump(model, 'saved_objects/xgb_' + str(i) + '_features_'+ version + '.joblib', compress = 1)
+            joblib.dump(model, self.dictionary['path']+'/'+'saved_objects/xgb_' + str(i) + '_features_'+ version + '.joblib', compress = 1)
             if save_pred:
                 pred = model.predict_proba(df.drop(drop_vars, axis=1))
                 out['pred'] = pred[:,1]
-                out.to_csv('results/pred_dev_'+ str(i) + '_features_'+ version + '.csv', index=False)
+                out.to_csv(self.dictionary['path']+'/'+'results/pred_dev_'+ str(i) + '_features_'+ version + '.csv', index=False)
             feature_imp = pd.DataFrame({'feature_names': curr_features, 'importance': model.feature_importances_})
-            feature_imp.to_csv('results/feature_importance_' + str(i) + '_features_'+ version + '.csv', index=False)
+            feature_imp.to_csv(self.dictionary['path']+'/'+'results/feature_importance_' + str(i) + '_features_'+ version + '.csv', index=False)
             score = model.predict_proba(curr_X)
             logging.debug("score is : {}".format(score))
             ks = self.ksTable(score[:,1], target, 'dev_xgb_' + str(i) + '_features_' + version)
@@ -401,7 +405,7 @@ class FeatureEngineering:
             else:
                 break_dec = np.nan
                 summary_df = summary_df.append(pd.DataFrame([[i, ks_val, break_dec, ks_decile, capture]],columns=['feature_count', 'dev_ks', 'dev_ro_break', 'dev_ks_decile', 'dev_capture']))
-        summary_df.to_csv('results/summary_df_features_xgb_' + version + '.csv', index =False)
+        summary_df.to_csv(self.dictionary['path']+'/'+'results/summary_df_features_xgb_' + version + '.csv', index =False)
         logging.debug("saveFeatureIterationDev executed successfully. Dictionary is : {}".format(self.dictionary))
         
     def saveFeatureIterationsVal(self,df,dset,save_pred = False):
@@ -417,7 +421,7 @@ class FeatureEngineering:
         summary_df_test =  pd.DataFrame()
         print('in test feature iter function ..')
         logging.debug("in test feature iter function...")
-        imp_features_df = pd.read_csv('feature_importance_' + version + '.csv')
+        imp_features_df = pd.read_csv(self.dictionary['path']+'/'+'results/feature_importance_' + version + '.csv')
         imp_features_df = imp_features_df.sort_values('importance', ascending = False)
         imp_features = imp_features_df[imp_features_df['importance'] != 0]
         feature_count = len(imp_features)
@@ -426,17 +430,17 @@ class FeatureEngineering:
         else:
             iter = list(range(10, feature_count, 10)) + [feature_count]
         target = df[y[0]]
-        summary_df = pd.read_csv('results/summary_df_features_xgb_' + version + '.csv')
+        summary_df = pd.read_csv(self.dictionary['path']+'/'+'results/summary_df_features_xgb_' + version + '.csv')
         for i in iter:
             print(dset + ' iteration {}'.format(i))
             logging.debug(dset+" iteration{}".format(i))
             curr_features = imp_features.feature_names[:i]
             curr_X = df.loc[:,curr_features]
-            model = joblib.load('saved_objects/xgb_' +  str(i) + '_features_'+ version + '.joblib')
+            model = joblib.load(self.dictionary['path']+'/'+'saved_objects/xgb_' +  str(i) + '_features_'+ version + '.joblib')
             if save_pred:
                 pred = model.predict_proba(curr_X)
                 out['pred'] = pred[:,1]
-                out.to_csv('results/pred_' + dset + '_' + str(i) + '_features_'+ version + '.csv', index=False)
+                out.to_csv(self.dictionary['path']+'/'+'results/pred_' + dset + '_' + str(i) + '_features_'+ version + '.csv', index=False)
             score = model.predict_proba(curr_X)
             logging.debug("score is : {}".format(score))
             ks = self.ksTable(score[:,1], target, dset +  '_xgb_' + str(i) + '_features_' + version)
@@ -458,7 +462,7 @@ class FeatureEngineering:
         summary_df[dset + '_ks_decile'] = summary_df_test[dset + '_ks_decile']
         summary_df[dset + '_capture'] = summary_df_test[dset + '_capture']
         summary_df['dev_' + dset + '_ks_diff'] = (summary_df['dev_ks'] - summary_df[dset + '_ks'])*100/summary_df['dev_ks']
-        summary_df.to_csv('results/summary_df_features_xgb_' + version + '.csv', index =False)
+        summary_df.to_csv(self.dictionary['path']+'/'+'results/summary_df_features_xgb_' + version + '.csv', index =False)
         logging.debug("saveFeatureIterationVal executed successfully. Dictionary is : {}".format(self.dictionary))
     
     
@@ -481,15 +485,11 @@ class FeatureEngineering:
         agg['min_pred'] = grouped.min().score
         agg['max_pred'] = grouped.max().score
         agg['pred_rr'] = grouped.mean().score
-        agg['actual_rr']=agg['No.Res']/agg['Total_Obs']
         agg['cum_no_res'] = agg['No.Res'].cumsum()
         agg['cum_no_non_res'] = agg['No.Non_Res'].cumsum()
         agg['percent_cum_res'] = agg['cum_no_res']/agg['cum_no_res'].max()
         agg['percent_cum_non_res'] = agg['cum_no_non_res']/agg['cum_no_non_res'].max()
         agg['KS'] = agg['percent_cum_res'] - agg['percent_cum_non_res']
-        agg['LIFT'] = (agg['percent_cum_res']/(agg['Total_Obs'].cumsum()/agg['Total_Obs'].sum()))*100
-        agg['MAPE'] = np.where(np.isinf(abs(agg['actual_rr'] - agg['pred_rr'])/agg['actual_rr']),'NA',abs(agg['actual_rr'] - agg['pred_rr'])/agg['actual_rr']) 
-        agg['GOF']= (agg['No.Res']-agg['pred_rr']*agg['Total_Obs'])**2/(agg['pred_rr']*agg['Total_Obs'])
-        agg.to_csv('results/KS_table_'+ identifier + '.csv', index = False)
+        agg.to_csv(self.dictionary['path']+'/'+'results/KS_table_'+ identifier + '.csv', index = False)
         logging.debug("ksTable Module executed successfully. Dictionary is : {}".format(self.dictionary))
         return(agg)
