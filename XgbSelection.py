@@ -1,3 +1,7 @@
+"""
+Version v0.9.2
+
+"""
 import logging
 logging.captureWarnings(True)
 import numpy as np
@@ -34,14 +38,14 @@ class XgbSelection:
         matplotlib.rcParams.update({'font.size': 7})
         rcParams.update({'figure.autolayout': True})
         plt.style.use('seaborn-paper')
-        if not os.path.exists('results'):
-            os.makedirs('results')
+        if not os.path.exists(self.dictionary['path']+'/'+'results'):
+            os.makedirs(self.dictionary['path']+'/'+'results')
  
-        if not os.path.exists('saved_objects'):
-            os.makedirs('saved_objects')
+        if not os.path.exists(self.dictionary['path']+'/'+'saved_objects'):
+            os.makedirs(self.dictionary['path']+'/'+'saved_objects')
  
-        if not os.path.exists('PDP'):
-            os.makedirs('PDP')    
+        if not os.path.exists(self.dictionary['path']+'/'+'PDP'):
+            os.makedirs(self.dictionary['path']+'/'+'PDP')    
             
     def runInitializer(self):
         logging.debug("inside runInitializer function of XgbSelection class.")
@@ -57,16 +61,17 @@ class XgbSelection:
     """
     def put_ParamSpace(self):
         logging.debug("inside put_Paramspace module of XgbSelection class. dictionary is :{} ".format(self.dictionary))
-        os.chdir(self.dictionary['path'])
         default_param_grid = {
                         'n_estimators': [100, 200],
                         'max_depth': [4, 6],
                         'subsample': [0.9, 1.0],
                         'learning_rate': [0.01, 0.1],
-                        'colsample_bytree': [ 0.9, 1.0]
+                        'colsample_bytree': [ 0.9, 1.0],
+                        'gamma': [0.0,10.0],
+                        'min_child_weight': [1,2]                    
                     }
         default_params_df = pd.DataFrame(default_param_grid, columns=default_param_grid.keys())
-        default_params_df.to_csv('IOFiles/XgbParamSpace.csv',index=False)
+        default_params_df.to_csv(self.dictionary['path']+'/'+'XgbParamSpace.csv',index=False)
         logging.debug("Default params for XgbSelection class are:{} ".format(default_params_df))
 
         '''
@@ -74,24 +79,22 @@ class XgbSelection:
         '''        
     def get_ParamSpace(self):
         logging.debug("inside get_ParamSpace Module of XgbSelection Class. dictionary is :{} ".format(self.dictionary))
-        os.chdir(self.dictionary['path'])
-        params_df=pd.read_csv('IOFiles/XgbParamSpace.csv')
+        params_df=pd.read_csv(self.dictionary['path']+'/'+'XgbParamSpace.csv')
         params_df = params_df.where((pd.notnull(params_df)), None)
         parameters=params_df.columns.tolist()
         self.dictionary['XgbParam_grid']={parameters[par]:list(params_df.loc[:,parameters[par]]) for par in range(len(parameters))}
         self.check_Path()
         self.params_df = pd.DataFrame(list(product(*self.dictionary['XgbParam_grid'].values())), columns=self.dictionary['XgbParam_grid'].keys())
-        self.params_df = self.params_df.loc[:,['n_estimators', 'max_depth', 'subsample', 'learning_rate', 'colsample_bytree']]
+        self.params_df = self.params_df.loc[:,['n_estimators', 'max_depth', 'subsample', 'learning_rate', 'colsample_bytree','gamma','min_child_weight']]
         self.params_df.dropna(inplace=True)
         self.params_df.reset_index(drop=True, inplace=True)
-        
         for col in self.params_df.columns:
             if (self.params_df[col].astype(float) == self.params_df[col].astype(float).astype(int)).all():
                 self.params_df[col] = self.params_df[col].astype(int)
             else:
                 self.params_df[col] = self.params_df[col].astype(float)
         logging.debug("Params for XgbSelection after user input are: {}: ".format(params_df))
-        
+       
     '''
     Check for the Path accesses, User must have read and write access for the Directory. 
     if User Dont have access for the Directory then we will not be able to process Further
@@ -139,7 +142,9 @@ class XgbSelection:
                 'subsample': 'sub_s',
                 'learning_rate': 'learn_r',
                 'colsample_bytree': 'col_samp',
-    	          'reg_lambda': 'lambda'
+    	          'reg_lambda': 'lambda',
+                  'gamma':'gamma',
+                  'min_child_weight':'mcw'
     	           }
         for idx, row in self.params_df.astype(object).iterrows():
             print('Iteration {0} of {1}'.format(idx +1, self.params_df.shape[0]))
@@ -148,15 +153,17 @@ class XgbSelection:
             identifier = identifier  +'_'.join(params_str) + '_' + version
             param = row.to_dict()
             #model = XGBClassifier(seed = 10, **params, nthread = 10)
-            model = XGBClassifier(seed = 10,learning_rate=param['learning_rate'],colsample_bytree=param['colsample_bytree'],n_estimators=param['n_estimators'],subsample=param['subsample'],max_depth=param['max_depth'] ,nthread = 10)
+            model = XGBClassifier(seed = 10,learning_rate=param['learning_rate'],colsample_bytree=param['colsample_bytree'],
+                                  n_estimators=param['n_estimators'],subsample=param['subsample'],max_depth=param['max_depth'],
+                                                    gamma=param['gamma'] ,min_child_weight=param['min_child_weight'],nthread = 10)
             model.fit(df.loc[:,imp_features], df[self.dictionary['target'][0]])
-            joblib.dump(model, 'saved_objects/xgb_' + identifier)
+            joblib.dump(model, self.dictionary['path']+'/'+'saved_objects/xgb_' + identifier)
             feature_imp = pd.DataFrame({'feature_names': imp_features, 'importance': model.feature_importances_})
-            feature_imp.to_csv('results/feature_importance_' + identifier + '.csv', index=False)
+            feature_imp.to_csv(self.dictionary['path']+'/'+'results/feature_importance_' + identifier + '.csv', index=False)
             score = model.predict_proba(df.loc[:,imp_features])
             if save_pred:
                 out['pred'] = score[:,1]
-                out.to_csv('results/pred_dev_'+ identifier + '.csv', index=False)
+                out.to_csv(self.dictionary['path']+'/'+'results/pred_dev_'+ identifier + '.csv', index=False)
             ks = self.ksTable(score[:,1],df[self.dictionary['target'][0]], 'dev_xgb_' + identifier)
             breaks = np.diff(ks['No.Res']) > 0
             dec_break = (np.diff(ks['No.Res']) > 0).any()
@@ -170,7 +177,7 @@ class XgbSelection:
                 break_dec = np.nan
                 summary_df = summary_df.append(pd.DataFrame([ list(row.values) + [ ks_val, break_dec, ks_decile, capture]],columns= list(row.index) + ['dev_ks', 'dev_ro_break', 'dev_ks_decile', 'dev_capture']))
             identifier = str(len(imp_features)) + 'var'
-        summary_df.to_csv('results/summary_df_params_xgb_' + version + '.csv', index =False)
+        summary_df.to_csv(self.dictionary['path']+'/'+'results/summary_df_params_xgb_' + version + '.csv', index =False)
         logging.debug("saveTrainingsDev module of XgbSelection Class executed successfully. summary is :{} ".format(summary_df))
         logging.debug(" dictionary is :{} ".format(self.dictionary))
     
@@ -192,7 +199,7 @@ class XgbSelection:
         out = df.loc[:, self.dictionary['id'] + self.dictionary['performance']]
         out['actual'] = df[self.dictionary['target'][0]]
         summary_df_test =  pd.DataFrame()
-        summary_df = pd.read_csv('results/summary_df_params_xgb_' + version + '.csv')
+        summary_df = pd.read_csv(self.dictionary['path']+'/'+'results/summary_df_params_xgb_' + version + '.csv')
         identifier = str(len(imp_features)) + 'var'
         alias = {
                 'n_estimators': 'est',
@@ -200,19 +207,21 @@ class XgbSelection:
                 'subsample': 'sub_s',
                 'learning_rate': 'learn_r',
                 'colsample_bytree': 'col_samp',
-    	          'reg_lambda': 'lambda'
+    	          'reg_lambda': 'lambda',
+                  'gamma':'gamma',
+                  'min_child_weight':'mcw'
     	           }
         for idx, row in params_df.astype(object).iterrows():
             print('Iteration {0} of {1}'.format(idx +1, params_df.shape[0]))
             tup = [i for i in zip([alias.get(row.index[j]) for j in range(len(params_df.columns))], row.values.astype(str))]
             params_str = [''.join(t) for t in tup]
             identifier = identifier +'_'.join(params_str) + '_' + version
-            param = row.to_dict()
-            model = joblib.load('saved_objects/xgb_' + identifier)
+            #param = row.to_dict()
+            model = joblib.load(self.dictionary['path']+'/'+'saved_objects/xgb_' + identifier)
             score = model.predict_proba(df.loc[:,imp_features])
             if save_pred:
                 out['pred'] = score[:,1]
-                out.to_csv('results/pred_' + dset + '_'+ identifier + '.csv', index=False)
+                out.to_csv(self.dictionary['path']+'/'+'results/pred_' + dset + '_'+ identifier + '.csv', index=False)
             ks = self.ksTable(score[:,1],df[self.dictionary['target'][0]], dset + '_xgb_' + identifier)
             breaks = np.diff(ks['No.Res']) > 0
             dec_break = (np.diff(ks['No.Res']) > 0).any()
@@ -232,7 +241,7 @@ class XgbSelection:
         summary_df[dset + '_ks_decile'] = summary_df_test[dset + '_ks_decile']
         summary_df[dset + '_capture'] = summary_df_test[dset + '_capture']
         summary_df['dev_' + dset + '_ks_diff'] = (summary_df['dev_ks'] - summary_df[dset + '_ks'])*100/summary_df['dev_ks']
-        summary_df.to_csv('results/summary_df_params_xgb_' + version + '.csv', index =False)
+        summary_df.to_csv(self.dictionary['path']+'/'+'results/summary_df_params_xgb_' + version + '.csv', index =False)
         logging.debug("saveTrainingsVal Module of XgbSelection Class executed successfully.")
     
     """ Saves summary of iterations on the paramters in the descending order of
@@ -243,7 +252,7 @@ class XgbSelection:
         logging.debug("inside XgbParamsIterationsSummary Module of XgbSelection Class .")
         iter_type='params'
         identifier='xgb_'+ self.version
-        summary_df = pd.read_csv('results/summary_df_' + iter_type + '_' + identifier + '.csv')
+        summary_df = pd.read_csv(self.dictionary['path']+'/'+'results/summary_df_' + iter_type + '_' + identifier + '.csv')
         summary_df['itv_otv_ks_diff'] = (summary_df['itv_ks'] - summary_df['otv_ks'])*100/summary_df['itv_ks']
         summary_df['dev_otv_diff_cat'] = np.where(summary_df['dev_otv_ks_diff'] <= 10, 1, 0)
         summary_df['otv_ro_cat'] = np.where(summary_df['otv_ro_break'].fillna(11) > 7, 1, 0)
@@ -271,7 +280,7 @@ class XgbSelection:
         summary_df['stability_weighted_otv_ks'] = summary_df['stability_score'] * summary_df['otv_ks']
         
         summary_df.sort_values('stability_weighted_otv_ks', ascending=False, inplace=True)
-        summary_df.to_csv('results/summary_df_' + iter_type + '_' + identifier + '_ordered.csv', index=False)
+        summary_df.to_csv(self.dictionary['path']+'/'+'results/summary_df_' + iter_type + '_' + identifier + '_ordered.csv', index=False)
         logging.debug(" XgbParamIterationsSumary Module of XgbSelection Class executed successfully. summary is :{} ".format(summary_df))
         return summary_df        
             
@@ -283,7 +292,7 @@ class XgbSelection:
         logging.debug("inside XgbParamSelection Module of XgbSelection Class .rank selected by user is : {}".format(rank))
         version=self.version
         summary_df=pd.read_csv('results/summary_df_params_xgb_' + version + '_ordered.csv')
-        params = ['n_estimators', 'max_depth', 'subsample', 'learning_rate', 'colsample_bytree', 'reg_lambda', 'reg_alpha']
+        params = ['n_estimators', 'max_depth', 'subsample', 'learning_rate', 'colsample_bytree', 'reg_lambda', 'reg_alpha','gamma','min_child_weight']
         param_cols = [i for i in summary_df.columns if i in params]
         final_params = summary_df[summary_df.Rank2== rank].iloc[0][param_cols].to_dict()
         final_params['n_estimators'] = int(final_params['n_estimators'])
@@ -325,11 +334,13 @@ class XgbSelection:
             curr_X = X_train[nonflat]
             target = X_train[y]
             #model = XGBClassifier(seed=10, **params, nthread=10)
-            model = XGBClassifier(seed = 10,learning_rate=params['learning_rate'],colsample_bytree=params['colsample_bytree'],n_estimators=params['n_estimators'],subsample=params['subsample'],max_depth=params['max_depth'] ,nthread = 10)
+            model = XGBClassifier(seed = 10,learning_rate=params['learning_rate'],colsample_bytree=params['colsample_bytree'],
+                                  n_estimators=params['n_estimators'],subsample=params['subsample'],max_depth=params['max_depth'],
+                                                    gamma=params['gamma'] ,min_child_weight=params['min_child_weight'],nthread = 10)
             model.fit(curr_X, target)
-            joblib.dump(model, 'saved_objects/xgb_nonflat_pdp_'+ version + '_' + identifier + '_' + str(len(nonflat)) + '.joblib', compress = 1)
+            joblib.dump(model, self.dictionary['path']+'/'+'saved_objects/xgb_nonflat_pdp_'+ version + '_' + identifier + '_' + str(len(nonflat)) + '.joblib', compress = 1)
             feature_imp = pd.DataFrame({'feature_names': nonflat, 'importance': model.feature_importances_})
-            feature_imp.to_csv('results/feature_importance_nonflat_pdp_'+ version + '_'  + identifier + '_' + str(len(nonflat)) + '.csv', index=False)
+            feature_imp.to_csv(self.dictionary['path']+'/'+'results/feature_importance_nonflat_pdp_'+ version + '_'  + identifier + '_' + str(len(nonflat)) + '.csv', index=False)
             score = model.predict_proba(curr_X)
             ks = self.ksTable(score[:,1], target, 'dev' + '_xgb_nonflat_pdp_' + version + '_'  + identifier + '_'+ str(len(nonflat)))
             breaks = np.diff(ks['No.Res']) > 0
@@ -373,11 +384,11 @@ class XgbSelection:
             summary_df_pdp = summary_df_pdp.append(summary_df)
         
             nonflat_prev = nonflat
-            if not os.path.exists('PDP/' + version + '_'  + identifier + '_' + str(len(nonflat))):
-                os.makedirs('PDP/' + version + '_'  + identifier + '_' + str(len(nonflat)))
-            nonflat = self.generatePDP(model, X_train, nonflat, os.path.join(save_loc, 'PDP/' + version + '_'  + identifier + '_' + str(len(nonflat))))
+            if not os.path.exists(self.dictionary['path']+'/'+'PDP/' + version + '_'  + identifier + '_' + str(len(nonflat))):
+                os.makedirs(self.dictionary['path']+'/'+'PDP/' + version + '_'  + identifier + '_' + str(len(nonflat)))
+            nonflat = self.generatePDP(model, X_train, nonflat, os.path.join(save_loc, self.dictionary['path']+'/'+'PDP/' + version + '_'  + identifier + '_' + str(len(nonflat))))
             num_flat = len(set(nonflat_prev)-set(nonflat))
-        summary_df_pdp.to_csv('results/summary_df_nonflat_pdp_xgb_' + version + '_'  + identifier + '.csv', index=False)
+        summary_df_pdp.to_csv(self.dictionary['path']+'/'+'results/summary_df_nonflat_pdp_xgb_' + version + '_'  + identifier + '.csv', index=False)
         logging.debug("pdpvarreduction Module of XgbSelection Class executed successfully.")
         return nonflat
     ####Response as 1 and 0
@@ -405,7 +416,7 @@ class XgbSelection:
         agg['percent_cum_res'] = agg['cum_no_res']/agg['cum_no_res'].max()
         agg['percent_cum_non_res'] = agg['cum_no_non_res']/agg['cum_no_non_res'].max()
         agg['KS'] = agg['percent_cum_res'] - agg['percent_cum_non_res']
-        agg.to_csv('results/KS_table_'+ identifier + '.csv', index = False)
+        agg.to_csv(self.dictionary['path']+'/'+'results/KS_table_'+ identifier + '.csv', index = False)
         logging.debug("KS Table is : {}".format(agg))
         return(agg)
     
@@ -493,42 +504,51 @@ class XgbSelection:
         X_otv: OTV dataset to score on
     """
     #final_params,version,otv
-    def finalReport(self,final_params,final_features,X_otv):
+    def finalReport(self,final_params,final_features,X_otv,X_itv):
         logging.debug("inside finalReport Module of XgbSelection Class .")
         nonflat=final_features
         version=self.version
         final_params= collections.OrderedDict(final_params)
         #print('error in next line') 
         identifier='_'.join([list(final_params.keys())[i] + str(list(final_params.values())[i]) for i in range(len(final_params.keys()))])
-        gbm = joblib.load('saved_objects/xgb_nonflat_pdp_' + version + '_'+ identifier + '_'+ str(len(nonflat))+ '.joblib')
+        gbm = joblib.load(self.dictionary['path']+'/'+'saved_objects/xgb_nonflat_pdp_' + version + '_'+ identifier + '_'+ str(len(nonflat))+ '.joblib')
         
-        feature_summary = pd.read_csv('results/summary_df_features_xgb_' + version + '_ordered.csv')
-        param_summary = pd.read_csv('results/summary_df_params_xgb_' + version + '_ordered.csv')
-        pdp_summary = pd.read_csv('results/summary_df_nonflat_pdp_xgb_' + version + '_' + identifier +'.csv')
-        
+        imp_features_df = pd.read_csv(self.dictionary['path']+'/'+'results/feature_importance_' + version + '.csv')
+        feature_summary = pd.read_csv(self.dictionary['path']+'/'+'results/summary_df_features_xgb_' + version + '_ordered.csv')
+        param_summary = pd.read_csv(self.dictionary['path']+'/'+'results/summary_df_params_xgb_' + version + '_ordered.csv')
+        pdp_summary = pd.read_csv(self.dictionary['path']+'/'+'results/summary_df_nonflat_pdp_xgb_' + version + '_' + identifier +'.csv')
+        os.chdir(self.dictionary['path'])
         writer = ExcelWriter('xgb_final_reports_'+ version +'.xlsx')
-        
+        #writer = ExcelWriter(self.dictionary['path']+'/'+'xgb_final_reports_'+ version +'.xlsx')
+        #os.chdir(self.dictionary['path'])
+        #feature_summary.to_csv(self.dictionary['path']+'/'+'Final_feature_summary.csv', index = False)
+        imp_features_df.to_excel(writer,'Initial Model Variables', index =False)
         feature_summary.to_excel(writer,'feature_summary', index =False)
-        param_summary.to_excel(writer,'parameter_summary', index =False)
-        pdp_summary.to_excel(writer,'pdp_summary', index =False)
+        #param_summary.to_csv(self.dictionary['path']+'/'+'Final_parameter_summary.csv', index = False)
         
-        feature_names = pd.read_csv('results/feature_importance_nonflat_pdp_' + version +'_' + identifier + '_' + str(len(nonflat)) + '.csv')
+        param_summary.to_excel(writer,'parameter_summary', index =False)
+        #pdp_summary.to_csv(self.dictionary['path']+'/'+'Final_pdp_summary.csv', index = False)
+        pdp_summary.to_excel(writer,'pdp_summary', index =False)
+       
+        feature_names = pd.read_csv(self.dictionary['path']+'/'+'results/feature_importance_nonflat_pdp_' + version +'_' + identifier + '_' + str(len(nonflat)) + '.csv')
+        #feature_names.to_csv(self.dictionary['path']+'/'+'Final_feature_importance.csv', index = False)
         feature_names.to_excel(writer,'feature_importance', index =False)
         feature_names = feature_names.feature_names.tolist()
         
-        dev_ks = pd.read_csv('results/KS_table_dev_xgb_nonflat_pdp_' + version + '_' + identifier + '_' + str(len(nonflat)) + '.csv')
-        itv_ks = pd.read_csv('results/KS_table_itv_xgb_nonflat_pdp_' + version + '_' + identifier + '_' + str(len(final_features))  + '.csv')
-        otv_ks = pd.read_csv('results/KS_table_otv_xgb_nonflat_pdp_' + version + '_' + identifier + '_' + str(len(final_features))  + '.csv')
+        dev_ks = pd.read_csv(self.dictionary['path']+'/'+'results/KS_table_dev_xgb_nonflat_pdp_' + version + '_' + identifier + '_' + str(len(nonflat)) + '.csv')
+        itv_ks = pd.read_csv(self.dictionary['path']+'/'+'results/KS_table_itv_xgb_nonflat_pdp_' + version + '_' + identifier + '_' + str(len(final_features))  + '.csv')
+        otv_ks = pd.read_csv(self.dictionary['path']+'/'+'results/KS_table_otv_xgb_nonflat_pdp_' + version + '_' + identifier + '_' + str(len(final_features))  + '.csv')
+        #dev_ks.to_csv(self.dictionary['path']+'/'+'Final_dev_ks.csv', index = False)
         dev_ks.to_excel(writer,'dev_ks', index =False)
+        #itv_ks.to_csv(self.dictionary['path']+'/'+'Final_itv_ks.csv', index = False)
         itv_ks.to_excel(writer,'itv_ks', index =False)
+        #otv_ks.to_csv(self.dictionary['path']+'/'+'Final_otv_ks.csv', index = False)
         otv_ks.to_excel(writer,'otv_ks', index =False)
         
         otv = X_otv.loc[:,feature_names]
-        
+        #itv = X_itv.loc[:,feature_names]
         score = gbm.predict_proba(otv)
-        
         otv['score'] = score[:,1]
-        
         otv['dev_grps'] = np.where(otv.score > dev_ks.min_pred[0], 0, np.where(otv.score > dev_ks.min_pred[1], 1, np.where(otv.score > dev_ks.min_pred[2], 2, np.where(otv.score > dev_ks.min_pred[3], 3, np.where(otv.score > dev_ks.min_pred[4], 4, np.where(otv.score > dev_ks.min_pred[5], 5, np.where(otv.score > dev_ks.min_pred[6], 6, np.where(otv.score > dev_ks.min_pred[7], 7, np.where(otv.score > dev_ks.min_pred[8], 8, np.where(otv.score <= dev_ks.min_pred[8], 9,-99))))))))))
         
         grouped = otv.groupby('dev_grps')
@@ -537,10 +557,44 @@ class XgbSelection:
         
         agg['psi'] = (0.1 - agg['percent_obs']/100) * np.log(0.1/(agg['percent_obs']/100))
         
-        print('PSI value is {}'.format(agg['psi'].sum()))
-        agg.to_excel(writer,'PSI', index =False)
-        logging.debug("PSI value is  {}".format(agg['psi'].sum()))
-        logging.debug('PSI table is as follows  {}'.format(agg['psi']))
-        writer.save()
+        print('DEV-OTV PSI value is {}'.format(agg['psi'].sum()))
+        #agg.to_csv(self.dictionary['path']+'/'+'Final_DEV_OTV_PSI.csv', index = False)
+        agg.to_excel(writer,'DEV_OTV_PSI', index =False)
+        logging.debug("DEV-OTV PSI value is  {}".format(agg['psi'].sum()))
+        logging.debug('DEV-OTV PSI table is as follows  {}'.format(agg['psi']))
+        del agg
+        #writer.save()
+        #otv['score'] = score[:,1]
+        otv['itv_grps'] = np.where(otv.score > itv_ks.min_pred[0], 0, np.where(otv.score > itv_ks.min_pred[1], 1, np.where(otv.score > itv_ks.min_pred[2], 2, np.where(otv.score > itv_ks.min_pred[3], 3, np.where(otv.score > itv_ks.min_pred[4], 4, np.where(otv.score > itv_ks.min_pred[5], 5, np.where(otv.score > itv_ks.min_pred[6], 6, np.where(otv.score > itv_ks.min_pred[7], 7, np.where(otv.score > itv_ks.min_pred[8], 8, np.where(otv.score <= itv_ks.min_pred[8], 9,-99))))))))))
+        
+        grouped = otv.groupby('itv_grps')
+        agg = pd.DataFrame({'Total_Obs': grouped.count().score})
+        agg['percent_obs'] = agg['Total_Obs']*100/agg['Total_Obs'].sum()
+        
+        agg['psi'] = (0.1 - agg['percent_obs']/100) * np.log(0.1/(agg['percent_obs']/100))
+        
+        print('ITV-OTV PSI value is {}'.format(agg['psi'].sum()))
+        #agg.to_csv(self.dictionary['path']+'/'+'Final_ITV_OTV_PSI.csv', index = False)
+        agg.to_excel(writer,'ITV_OTV_PSI', index =False)
+        logging.debug("ITV-OTV PSI value is  {}".format(agg['psi'].sum()))
+        logging.debug('ITV-OTV PSI table is as follows  {}'.format(agg['psi']))
+        del agg
         print('Final reports file ' + 'xgb_final_reports_'+ version +'.xlsx' + '_is created at path: ', self.dictionary['path'])
-    
+        #otv = X_otv.loc[:,feature_names]
+        itv = X_itv.loc[:,feature_names]
+        score = gbm.predict_proba(itv)
+        itv['score'] = score[:,1]
+        itv['dev_grps'] = np.where(itv.score > dev_ks.min_pred[0], 0, np.where(itv.score > dev_ks.min_pred[1], 1, np.where(itv.score > dev_ks.min_pred[2], 2, np.where(itv.score > dev_ks.min_pred[3], 3, np.where(itv.score > dev_ks.min_pred[4], 4, np.where(itv.score > dev_ks.min_pred[5], 5, np.where(itv.score > dev_ks.min_pred[6], 6, np.where(itv.score > dev_ks.min_pred[7], 7, np.where(itv.score > dev_ks.min_pred[8], 8, np.where(itv.score <= dev_ks.min_pred[8], 9,-99))))))))))
+        
+        grouped = itv.groupby('dev_grps')
+        agg = pd.DataFrame({'Total_Obs': grouped.count().score})
+        agg['percent_obs'] = agg['Total_Obs']*100/agg['Total_Obs'].sum()
+        
+        agg['psi'] = (0.1 - agg['percent_obs']/100) * np.log(0.1/(agg['percent_obs']/100))
+        
+        print('DEV-ITV PSI value is {}'.format(agg['psi'].sum()))
+        #agg.to_csv(self.dictionary['path']+'/'+'Final_DEV-ITV_PSI.csv', index = False)
+        agg.to_excel(writer,'DEV_ITV_PSI', index =False)
+        logging.debug("DEV-ITV PSI value is  {}".format(agg['psi'].sum()))
+        logging.debug('DEV-ITV PSI table is as follows  {}'.format(agg['psi']))
+        writer.save()
