@@ -1,3 +1,7 @@
+"""
+Version v0.9.2
+
+"""
 import logging
 logging.captureWarnings(True)
 import pandas as pd
@@ -30,21 +34,20 @@ class main:
         self.isxgbparamsselection=False
         self.ispdpvarreduction=False
         self.isfinalreport=False
-        
+        ##############Version of Tool= v0.91
         
         
     def checkfile(self,filename):
         return os.path.exists(str(str(os.getcwd())+str('/')+str('save.p')))
         
     def modelDev(self,path,test_size=0.2,version=None):
-        #if(os.path.exists('save.p')==True):
-            #os.chdir(os.getcwd())
-            #self=pickle.load(open('save.p', 'rb'))
+        if(os.path.exists('save.p')==True):
+            os.chdir(os.getcwd())
+            self=pickle.load(open('save.p', 'rb'))
             
             
         try:
-            os.chdir(os.getcwd())
-            from MVP_Logger1.dataDictionary import myModel
+            from dataDictionary import myModel
             if(self.ismymodel==False):
                 self.objects[version] = myModel(path)
                 self.ismymodel=True
@@ -95,7 +98,7 @@ class main:
             Outlier fit and transform
             '''
             if(self.isoutlier==False):    
-                self.objects[version].outlierFit(self.objects[version].impute_train, self.objects[version].dictionary, outlier_cap = 0.99, version=self.objects[version].version)
+                self.objects[version].outlierFit(self.objects[version].impute_train, self.objects[version].dictionary, lower_cap = 1, upper_cap = 99, version=self.objects[version].version)
                 self.isoutlier=True
             
             if(self.isoutliertransform==False):
@@ -146,8 +149,12 @@ class main:
             Model selection from feature iteration
             '''
             if(self.isfeaturesselection==False):
-                self.objects[version].featureslist=self.objects[version].featuresSelection(rank=1,version=self.objects[version].version) 
+                rank = int(input("To specify the final number of features,provide the Rank2 from File results/summary_df_features_xgb_{0}_ordered.csv ------> ".format(self.objects[version].version)))
+                while not isinstance(rank, int):
+                    rank = int(input("Integer input only\n"))
+                self.objects[version].featureslist=self.objects[version].featuresSelection(rank=rank,version=self.objects[version].version) 
                 self.isfeaturesselection=True
+                
             if(self.ismodelselection==False):    
                 self.objects[version].modelSelection(self.objects[version].dictionary,self.objects[version].version,"dev")
                 self.ismodelselection=True
@@ -172,7 +179,10 @@ class main:
             Model selection from parameter iteration
             '''
             if(self.isxgbparamsselection==False):
-                self.objects[version].final_params= self.objects[version].XgbParamsSelection(1,self.objects[version].version)
+                rank = int(input("To specify the final set of parameters,provide the Rank2 from File results/summary_df_params_xgb_{0}_ordered.csv -----> ".format(self.objects[version].version)))
+                while not isinstance(rank, int):
+                    rank = int(input("Integer input only\n"))
+                self.objects[version].final_params= self.objects[version].XgbParamsSelection(rank,self.objects[version].version)
                 self.isxgbparamsselection=True
                 
             '''
@@ -186,11 +196,10 @@ class main:
             Final report generation
             '''
             if(self.isfinalreport==False):
-                self.objects[version].finalReport(self.objects[version].final_params,self.objects[version].final_nonflat_features,self.objects[version].impute_otv,self.objects[version].version)
+                self.objects[version].finalReport(self.objects[version].final_params,self.objects[version].final_nonflat_features,self.objects[version].impute_otv,self.objects[version].impute_itv,self.objects[version].version)
                 self.isfinalreport=True
         except KeyboardInterrupt:
             print("object saving ...")
-            os.chdir(os.getcwd())
             if(os.path.exists(str(str(os.getcwd())+str('/')+str('save.p')))):
                 shutil.os.remove('save.p')
             pickle.dump(self,open('save.p','wb'))
@@ -205,7 +214,7 @@ class main:
         self.objects[version].merged_otv=self.objects[version].featureTransform(self.objects[version].impute_otv,self.objects[version].version,"otv")
         self.objects[version].train_test_save(self.objects[version].impute_otv,self.objects[version].featureslist,self.objects[version].version,'otv')
         #self.objects[version].final_nonflat_features=self.objects[version].obj.pdpVarReduction(self.objects[version].merged_train,[self.objects[version].merged_itv,self.objects[version].merged_otv],['itv','otv'],self.objects[version].featureslist, self.objects[version].final_params,self.objects[version].version)
-        self.objects[version].finalReport(self.objects[version].final_params,self.objects[version].final_nonflat_features,self.objects[version].impute_otv,self.objects[version].version)
+        self.objects[version].finalReport(self.objects[version].final_params,self.objects[version].final_nonflat_features,self.objects[version].impute_otv,self.objects[version].impute_itv,self.objects[version].version)
     
     def cleaning(self):
         shutil.os.remove('save.p')
